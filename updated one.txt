@@ -1,0 +1,1569 @@
+import subprocess as sp
+import streamlit as st
+import pandas as pd
+from database.db import init_db
+from database.bank_crud import (
+    create_account, get_account, list_accounts,
+    add_faq, get_all_faqs, search_faqs, 
+    get_faqs_by_category, update_faq, delete_faq
+)
+from database.security import verify_password
+from dialogue_manager.dialogue_handler import DialogueHandler
+
+# Session state init
+if "handler" not in st.session_state:
+    st.session_state.handler = DialogueHandler()
+if "page" not in st.session_state:
+    st.session_state.page = "Home"
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "is_logged_in" not in st.session_state:
+    st.session_state.is_logged_in = False
+
+init_db()
+st.set_page_config(page_title="BankBot", layout="wide")
+
+# Styling
+st.markdown("""
+<style>
+section[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #0f2027, #203a43, #2c5364);
+    color: white;
+}
+section[data-testid="stSidebar"] h1 { color: #ffffff; font-weight: 700; }
+section[data-testid="stSidebar"] .stSelectbox > div { background-color: #ffffff; border-radius: 10px; padding: 4px; }
+section[data-testid="stSidebar"] .stSelectbox label { color: #ffffff; font-weight: 600; }
+
+button[kind="primary"] {
+    background: linear-gradient(135deg, #1e88e5, #42a5f5) !important;
+    color: white !important;
+    border-radius: 12px !important;
+    font-weight: 700 !important;
+}
+button:not([kind="primary"]) {
+    background: linear-gradient(135deg, #8e24aa, #ba68c8) !important;
+    color: white !important;
+    border-radius: 12px !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+def bottom_navigation(back_page=None, next_page=None):
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 6, 1])
+    with col1:
+        if next_page and st.button("➡ Next", key=f"next_{next_page}"):
+            st.session_state.page = next_page
+            st.rerun()
+    with col3:
+        if back_page and st.button("⬅ Back", key=f"back_{back_page}"):
+            st.session_state.page = back_page
+            st.rerun()
+
+# Sidebar
+st.sidebar.title("🏦 BankBot")
+pages = ["🏠Home", "🧠User Query", "➕Create Account", "👤Login", "🤖Chatbot", "🗄️Database", "⏳History", "❓Help", "🛠️Admin Dashboard"]
+if st.session_state.page not in pages:
+    st.session_state.page = pages[0]
+selected_page = st.sidebar.selectbox("📌 Navigate", pages, index=pages.index(st.session_state.page))
+st.session_state.page = selected_page
+
+# HOME
+if st.session_state.page == "🏠Home":
+    st.markdown("""
+    <style>
+    .home-container { background: linear-gradient(135deg, #eef2f3, #ffffff); padding: 50px; border-radius: 24px; }
+    .home-title { color: #000000; font-size: 42px; font-weight: 900; margin-bottom: 12px; }
+    .home-subtitle { color: #444; font-size: 18px; margin-bottom: 30px; }
+    .feature-card { padding: 26px; border-radius: 18px; text-align: center; font-size: 16px; font-weight: 700; box-shadow: 0px 10px 25px rgba(0,0,0,0.08); transition: transform 0.2s ease-in-out; }
+    .feature-card:hover { transform: translateY(-6px); }
+    .create { background: #e3f2fd; color: #0d47a1; }
+    .login { background: #e8f5e9; color: #1b5e20; }
+    .balance { background: #fff8e1; color: #ff6f00; }
+    .transfer { background: #f3e5f5; color: #4a148c; }
+    .block { background: #fdecea; color: #b71c1c; }
+    </style>
+    <div class="home-container">
+        <div class="home-title">🏦 AI Chatbot for Banking FAQs</div>
+        <div class="home-subtitle">Your AI-powered banking assistant for secure, fast and smart banking</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col1, col2, col3, col4, col5 = st.columns(5)
+    with col1:
+        st.markdown("<div class='feature-card create'>➕<br>Create Account</div>", unsafe_allow_html=True)
+    with col2:
+        st.markdown("<div class='feature-card login'>🔐<br>Secure Login</div>", unsafe_allow_html=True)
+    with col3:
+        st.markdown("<div class='feature-card balance'>💰<br>Check Balance</div>", unsafe_allow_html=True)
+    with col4:
+        st.markdown("<div class='feature-card transfer'>🔄<br>Money Transfer</div>", unsafe_allow_html=True)
+    with col5:
+        st.markdown("<div class='feature-card block'>🚫<br>Card Blocking</div>", unsafe_allow_html=True)
+    
+    bottom_navigation(None, "🧠User Query")
+
+# USER QUERY
+elif st.session_state.page == "🧠User Query":
+    st.title("🧠 User Query – NLU Engine (Milestone 1)")
+    st.info("This will open the Milestone-1 NLU Intent Recognition & Entity Extraction UI.")
+    if st.button("🚀 Open NLU Engine"):
+        sp.Popen(["streamlit", "run", "milestone1_app.py"])
+        st.success("Milestone-1 NLU UI launched in a new window/tab.")
+    bottom_navigation("🏠Home", "➕Create Account")
+
+# CREATE ACCOUNT
+elif st.session_state.page == "➕Create Account":
+    st.title("📝 Create Account")
+    name = st.text_input("User Name")
+    acc_no = st.text_input("Account Number")
+    acc_type = st.selectbox("Account Type", ["Savings", "Current"])
+    balance = st.number_input("Initial Balance", min_value=0)
+    password = st.text_input("Set Password", type="password")
+    if st.button("Create Account"):
+        if not all([name, acc_no, password]):
+            st.error("Please fill all fields")
+        else:
+            try:
+                create_account(name, acc_no, acc_type, balance, password)
+                st.success("✅ Account created successfully")
+            except:
+                st.error("⚠ Account already exists")
+    bottom_navigation("🧠User Query", "👤Login")
+
+# LOGIN SECTION 
+elif st.session_state.page == "👤Login":
+    st.title("🔐 User Login")
+    if "forgot_mode" not in st.session_state:
+        st.session_state.forgot_mode = False
+    accounts = list_accounts()
+    if not accounts:
+        st.warning("⚠ No accounts available. Please create an account first.")
+        bottom_navigation("➕Create Account", None)
+    else:
+        usernames = [acc[1] for acc in accounts]
+        if not st.session_state.forgot_mode:
+            username = st.selectbox("Select User Name", usernames)
+            password = st.text_input("Password", type="password")
+            col1, col2 = st.columns([6, 1])
+            with col1:
+                if st.button("Login"):
+                    acc_no = None
+                    for acc in accounts:
+                        if acc[1] == username:
+                            acc_no = acc[0]
+                            break
+                    account = get_account(acc_no)
+                    if not verify_password(password, account[4]):
+                        st.error("❌ Wrong password")
+                    else:
+                        st.success("✅ Login successful")
+                        st.session_state.is_logged_in = True
+                        st.session_state.logged_in_username = username
+                        st.rerun()
+            with col2:
+                if st.button("Forgot Password?"):
+                    st.session_state.forgot_mode = True
+                    st.rerun()
+        else:
+            st.subheader("🔑 Update Password")
+            username = st.selectbox("Select User Name", usernames)
+            new_password = st.text_input("New Password", type="password")
+            confirm_password = st.text_input("Confirm New Password", type="password")
+            if st.button("Update Password"):
+                if not new_password or not confirm_password:
+                    st.error("⚠ Please fill all fields")
+                elif new_password != confirm_password:
+                    st.error("❌ Passwords do not match")
+                else:
+                    acc_no = None
+                    for acc in accounts:
+                        if acc[1] == username:
+                            acc_no = acc[0]
+                            break
+                    from database.bank_crud import update_password
+                    update_password(acc_no, new_password)
+                    st.success("✅ Password updated successfully")
+                    st.session_state.forgot_mode = False
+                    st.rerun()
+            if st.button("⬅ Back to Login"):
+                st.session_state.forgot_mode = False
+                st.rerun()
+        bottom_navigation("➕Create Account", "🤖Chatbot")
+
+# CHATBOT SECTION 
+elif st.session_state.page == "🤖Chatbot":
+    st.title("🤖 BankBot – AI Banking Assistant")
+    if not st.session_state.is_logged_in:
+        st.warning("🔒 Please login to access the chatbot.")
+        bottom_navigation("👤Login", None)
+    else:
+        if "logged_in_username" not in st.session_state:
+            st.session_state.logged_in_username = "guest"
+        
+        st.markdown("""
+        <style>
+        .user-bubble { background-color: #DCF8C6; padding: 10px 14px; border-radius: 15px; margin: 8px 0; max-width: 70%; margin-left: auto; box-shadow: 0px 1px 3px rgba(0,0,0,0.1); }
+        .bot-bubble { background-color: #F1F0F0; padding: 10px 14px; border-radius: 15px; margin: 8px 0; max-width: 70%; box-shadow: 0px 1px 3px rgba(0,0,0,0.1); }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        for sender, msg in st.session_state.chat_history:
+            if sender == "You":
+                st.markdown(f"<div class='user-bubble'>🧑 {msg}</div>", unsafe_allow_html=True)
+            else:
+                st.markdown(f"<div class='bot-bubble'>🤖 {msg}</div>", unsafe_allow_html=True)
+        
+        with st.form("chat_form", clear_on_submit=True):
+            user_input = st.text_input("Type your message...")
+            send = st.form_submit_button("Send")
+        
+        if send and user_input.strip():
+            st.session_state.handler.context["username"] = st.session_state.logged_in_username
+            
+            reply = st.session_state.handler.handle_message(user_input)
+            st.session_state.chat_history.append(("You", user_input))
+            st.session_state.chat_history.append(("Bot", reply))
+            st.rerun()
+        
+    bottom_navigation("👤Login", "🗄️Database")
+
+# DATABASE
+elif st.session_state.page == "🗄️Database":
+    st.title("📊 Database Management")
+    accounts = list_accounts()
+    if accounts:
+        df = pd.DataFrame(accounts, columns=["Account Number", "User Name"])
+        st.table(df)
+    else:
+        st.info("No accounts found in database.")
+    bottom_navigation("🤖Chatbot", "⏳History")
+
+# HISTORY
+elif st.session_state.page == "⏳History":
+    st.title("🕒 Chat History")
+    if not st.session_state.chat_history:
+        st.info("No history found")
+    else:
+        for sender, msg in st.session_state.chat_history:
+            st.write(f"{sender}: {msg}")
+    bottom_navigation("🗄️Database", "❓Help")
+
+# HELP
+elif st.session_state.page == "❓Help":
+    st.title("❓ Help & Support")
+    st.markdown("### 📝 General Guidance")
+    with st.expander("How to create an account?"):
+        st.write("Go to the 'Create Account' page, fill in your details, set a secure password, and click 'Create Account'.")
+    with st.expander("How to login?"):
+        st.write("Go to the 'Login' page, enter your account number and password, then click 'Login'.")
+    with st.expander("How to check balance and transaction history?"):
+        st.write("After logging in, access the 'Chatbot' or 'Database' page to view your account details and transactions.")
+    with st.expander("How to transfer money?"):
+        st.write("Use the chatbot to request a money transfer. Example: 'Transfer ₹500 to account 12345'. Ensure you are logged in.")
+    st.markdown("### 🔒 Security Tips")
+    with st.expander("How to keep my account safe?"):
+        st.write("Never share your password or PIN, avoid using public Wi-Fi, and do not click on suspicious links.")
+    bottom_navigation("⏳History", "🛠️Admin Dashboard")
+
+# ADMIN DASHBOARD
+elif st.session_state.page == "🛠️Admin Dashboard":
+    st.title("🛠️ Admin Panel")
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from datetime import datetime, timedelta
+    from database.bank_crud import fetch_chat_history
+    
+    if st.button("🔄 Refresh Dashboard"):
+        st.rerun()
+    
+    chats = fetch_chat_history()
+    df = pd.DataFrame(chats, columns=["ID", "User", "Query", "Intent", "Confidence", "Time"]) if chats else pd.DataFrame(columns=["ID", "User", "Query", "Intent", "Confidence", "Time"])
+    
+    # ==================== UNIFIED FILTERING FUNCTION ====================
+    def is_initial_query(query, intent):
+        """Check if query is an initial user intent (not follow-up data)"""
+        query_lower = query.lower()
+        
+        if intent == "greetings":
+            greetings = ["hi", "hello", "hey", "good morning", "good evening", 
+                        "thanks", "thank you", "thx", "thankyou"]
+            return query_lower.strip() in greetings
+        
+        elif intent == "check_balance":
+            balance_keywords = ["balance", "check", "account balance", "my balance", 
+                               "saving", "current", "money", "funds"]
+            has_keyword = any(keyword in query_lower for keyword in balance_keywords)
+            is_just_number = query.strip().isdigit()
+            is_password = len(query) < 20 and not any(c.isalpha() for c in query)
+            
+            return has_keyword and not is_just_number and not is_password
+        
+        elif intent == "transfer_money":
+            transfer_keywords = ["transfer", "send", "pay", "money", "amount"]
+            has_keyword = any(keyword in query_lower for keyword in transfer_keywords)
+            is_just_number = query.strip().isdigit()
+            
+            return has_keyword and not is_just_number
+        
+        elif intent == "card_block":
+            block_keywords = ["block", "card", "debit", "credit", "stolen", "lost", "fraud"]
+            has_keyword = any(keyword in query_lower for keyword in block_keywords)
+            is_just_reason = query_lower.strip() in ["lost", "stolen", "fraud"]
+            
+            return has_keyword and not is_just_reason
+        
+        elif intent == "llm":
+            is_just_number = query.strip().isdigit()
+            is_too_short = len(query.strip()) < 3
+            
+            return not is_just_number and not is_too_short
+        
+        return True
+    
+    # Apply unified filtering
+    if not df.empty:
+        filtered_df = df[df.apply(lambda row: is_initial_query(row["Query"], row["Intent"]), axis=1)].copy()
+    else:
+        filtered_df = df.copy()
+    
+    # ==================== DASHBOARD NAVIGATION ====================
+    if "admin_view" not in st.session_state:
+        st.session_state.admin_view = None
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        if st.button("📊 Top User Queries"):
+            st.session_state.admin_view = None if st.session_state.admin_view == "queries" else "queries"
+    with col2:
+        if st.button("📚 Knowledge Base"):
+            st.session_state.admin_view = None if st.session_state.admin_view == "knowledge_base" else "knowledge_base"
+    with col3:
+        if st.button("📈 Confidence"):
+            st.session_state.admin_view = None if st.session_state.admin_view == "confidence" else "confidence"
+    with col4:
+        if st.button("🔁 Model Retraining"):
+            st.session_state.admin_view = None if st.session_state.admin_view == "retrain" else "retrain"
+    
+    col5, col6, col7, col8 = st.columns(4)
+    with col5:
+        if st.button("💬 User Chat Logs"):
+            st.session_state.admin_view = None if st.session_state.admin_view == "logs" else "logs"
+    with col6:
+        if st.button("📊 Analytics Dashboard"):
+            st.session_state.admin_view = None if st.session_state.admin_view == "analytics" else "analytics"
+    with col7:
+        if st.button("💡 Smart Recommendations"):
+            st.session_state.admin_view = None if st.session_state.admin_view == "recommendations" else "recommendations"
+    with col8:
+        if st.button("🎓 Performance Metrics"):
+            st.session_state.admin_view = None if st.session_state.admin_view == "performance" else "performance"
+    
+    st.divider()
+    
+    # ==================== ANALYTICS DASHBOARD ====================
+    if st.session_state.admin_view == "analytics":
+        st.subheader("📊 Advanced Analytics & Insights")
+        
+        if filtered_df.empty:
+            st.warning("No data available for analytics")
+        else:
+            # Convert Time to datetime
+            if not filtered_df.empty:
+                try:
+                    filtered_df['Time'] = pd.to_datetime(filtered_df['Time'])
+                except:
+                    pass
+            
+            # ===== KEY METRICS =====
+            st.markdown("### 📈 Key Performance Indicators")
+            
+            # Calculate metrics
+            total_queries = len(filtered_df)
+            unique_users = filtered_df['User'].nunique() if 'User' in filtered_df.columns else 0
+            avg_confidence = filtered_df['Confidence'].mean() if 'Confidence' in filtered_df.columns else 0
+            high_conf_queries = len(filtered_df[filtered_df['Confidence'] > 0.7]) if 'Confidence' in filtered_df.columns else 0
+            success_rate = (high_conf_queries / total_queries * 100) if total_queries > 0 else 0
+            
+            # Display metrics in cards
+            col1, col2, col3, col4, col5 = st.columns(5)
+            
+            with col1:
+                st.markdown(f"""
+                <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                            padding: 25px; border-radius: 15px; text-align: center; color: white;
+                            box-shadow: 0 4px 15px rgba(0,0,0,0.2);'>
+                    <h4 style='margin: 0; font-size: 14px; opacity: 0.9;'>Total Queries</h4>
+                    <h1 style='margin: 10px 0; font-size: 36px; font-weight: 800;'>{total_queries}</h1>
+                    <p style='margin: 0; font-size: 12px; opacity: 0.8;'>All time</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown(f"""
+                <div style='background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); 
+                            padding: 25px; border-radius: 15px; text-align: center; color: white;
+                            box-shadow: 0 4px 15px rgba(0,0,0,0.2);'>
+                    <h4 style='margin: 0; font-size: 14px; opacity: 0.9;'>Active Users</h4>
+                    <h1 style='margin: 10px 0; font-size: 36px; font-weight: 800;'>{unique_users}</h1>
+                    <p style='margin: 0; font-size: 12px; opacity: 0.8;'>Unique users</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col3:
+                st.markdown(f"""
+                <div style='background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); 
+                            padding: 25px; border-radius: 15px; text-align: center; color: white;
+                            box-shadow: 0 4px 15px rgba(0,0,0,0.2);'>
+                    <h4 style='margin: 0; font-size: 14px; opacity: 0.9;'>Avg Confidence</h4>
+                    <h1 style='margin: 10px 0; font-size: 36px; font-weight: 800;'>{avg_confidence:.2f}</h1>
+                    <p style='margin: 0; font-size: 12px; opacity: 0.8;'>Model accuracy</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col4:
+                queries_per_user = total_queries / unique_users if unique_users > 0 else 0
+                st.markdown(f"""
+                <div style='background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); 
+                            padding: 25px; border-radius: 15px; text-align: center; color: white;
+                            box-shadow: 0 4px 15px rgba(0,0,0,0.2);'>
+                    <h4 style='margin: 0; font-size: 14px; opacity: 0.9;'>Queries/User</h4>
+                    <h1 style='margin: 10px 0; font-size: 36px; font-weight: 800;'>{queries_per_user:.1f}</h1>
+                    <p style='margin: 0; font-size: 12px; opacity: 0.8;'>Average engagement</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col5:
+                st.markdown(f"""
+                <div style='background: linear-gradient(135deg, #30cfd0 0%, #330867 100%); 
+                            padding: 25px; border-radius: 15px; text-align: center; color: white;
+                            box-shadow: 0 4px 15px rgba(0,0,0,0.2);'>
+                    <h4 style='margin: 0; font-size: 14px; opacity: 0.9;'>Success Rate</h4>
+                    <h1 style='margin: 10px 0; font-size: 36px; font-weight: 800;'>{success_rate:.1f}%</h1>
+                    <p style='margin: 0; font-size: 12px; opacity: 0.8;'>High confidence</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            st.divider()
+            
+            # ===== TIME-BASED ANALYTICS =====
+            st.markdown("### 📅 Query Trends Over Time")
+            
+            if 'Time' in filtered_df.columns and not filtered_df.empty:
+                # Queries per day
+                filtered_df['Date'] = filtered_df['Time'].dt.date
+                daily_queries = filtered_df.groupby('Date').size().reset_index(name='Count')
+                
+                col1, col2 = st.columns([2, 1])
+                
+                with col1:
+                    fig, ax = plt.subplots(figsize=(10, 5))
+                    ax.plot(daily_queries['Date'], daily_queries['Count'], 
+                           marker='o', linewidth=2.5, markersize=8, color='#667eea')
+                    ax.fill_between(daily_queries['Date'], daily_queries['Count'], alpha=0.3, color='#667eea')
+                    ax.set_xlabel("Date", fontsize=12, fontweight='bold')
+                    ax.set_ylabel("Number of Queries", fontsize=12, fontweight='bold')
+                    ax.set_title("Daily Query Volume", fontsize=14, fontweight='bold', pad=20)
+                    ax.grid(True, alpha=0.3, linestyle='--')
+                    plt.xticks(rotation=45)
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                    plt.close()
+                
+                with col2:
+                    st.markdown("### 📊 Daily Stats")
+                    avg_daily = daily_queries['Count'].mean()
+                    max_daily = daily_queries['Count'].max()
+                    min_daily = daily_queries['Count'].min()
+                    
+                    st.metric("Avg Queries/Day", f"{avg_daily:.1f}")
+                    st.metric("Peak Day", f"{max_daily}")
+                    st.metric("Lowest Day", f"{min_daily}")
+                    
+                    # Growth indicator
+                    if len(daily_queries) > 1:
+                        recent = daily_queries.iloc[-1]['Count']
+                        previous = daily_queries.iloc[-2]['Count']
+                        growth = ((recent - previous) / previous * 100) if previous > 0 else 0
+                        st.metric("Daily Growth", f"{growth:+.1f}%", delta=f"{growth:+.1f}%")
+                
+                st.divider()
+                
+                # Peak usage times (hourly)
+                st.markdown("### ⏰ Peak Usage Times")
+                if 'Time' in filtered_df.columns:
+                    filtered_df['Hour'] = filtered_df['Time'].dt.hour
+                    hourly_queries = filtered_df.groupby('Hour').size().reset_index(name='Count')
+                    
+                    fig, ax = plt.subplots(figsize=(12, 4))
+                    colors = ['#f5576c' if count == hourly_queries['Count'].max() else '#4facfe' 
+                             for count in hourly_queries['Count']]
+                    bars = ax.bar(hourly_queries['Hour'], hourly_queries['Count'], color=colors, alpha=0.8)
+                    ax.set_xlabel("Hour of Day", fontsize=12, fontweight='bold')
+                    ax.set_ylabel("Query Count", fontsize=12, fontweight='bold')
+                    ax.set_title("Hourly Query Distribution", fontsize=14, fontweight='bold', pad=20)
+                    ax.set_xticks(range(0, 24))
+                    ax.grid(True, axis='y', alpha=0.3, linestyle='--')
+                    
+                    # Highlight peak hour
+                    peak_hour = hourly_queries.loc[hourly_queries['Count'].idxmax(), 'Hour']
+                    ax.text(peak_hour, hourly_queries['Count'].max(), 
+                           f'Peak: {int(peak_hour)}:00', 
+                           ha='center', va='bottom', fontweight='bold', color='#f5576c')
+                    
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                    plt.close()
+            
+            st.divider()
+            
+            # ===== USER ENGAGEMENT METRICS =====
+            st.markdown("### 👥 User Engagement Analysis")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Top users
+                st.markdown("#### 🏆 Most Active Users")
+                user_activity = filtered_df['User'].value_counts().head(10).reset_index()
+                user_activity.columns = ['User', 'Queries']
+                
+                fig, ax = plt.subplots(figsize=(8, 5))
+                bars = ax.barh(user_activity['User'], user_activity['Queries'], 
+                              color=plt.cm.viridis(np.linspace(0, 1, len(user_activity))))
+                ax.set_xlabel("Number of Queries", fontsize=11, fontweight='bold')
+                ax.set_ylabel("User", fontsize=11, fontweight='bold')
+                ax.set_title("Top 10 Active Users", fontsize=12, fontweight='bold')
+                
+                for i, bar in enumerate(bars):
+                    width = bar.get_width()
+                    ax.text(width, bar.get_y() + bar.get_height()/2, 
+                           f' {int(width)}', ha='left', va='center', fontweight='bold')
+                
+                plt.tight_layout()
+                st.pyplot(fig)
+                plt.close()
+            
+            with col2:
+                # Intent distribution per user
+                st.markdown("#### 🎯 User Intent Preferences")
+                intent_by_user = filtered_df.groupby(['User', 'Intent']).size().reset_index(name='Count')
+                
+                # Show diversity score
+                user_intent_diversity = filtered_df.groupby('User')['Intent'].nunique().mean()
+                st.metric("Avg Intent Diversity", f"{user_intent_diversity:.2f}", 
+                         help="Average number of different intents per user")
+                
+                # User segmentation
+                st.markdown("**User Segments:**")
+                query_counts = filtered_df['User'].value_counts()
+                power_users = len(query_counts[query_counts > 10])
+                regular_users = len(query_counts[(query_counts >= 5) & (query_counts <= 10)])
+                casual_users = len(query_counts[query_counts < 5])
+                
+                st.markdown(f"""
+                - 🔥 Power Users (>10 queries): **{power_users}**
+                - 👤 Regular Users (5-10 queries): **{regular_users}**
+                - 🆕 Casual Users (<5 queries): **{casual_users}**
+                """)
+                
+                # Pie chart
+                fig, ax = plt.subplots(figsize=(6, 6))
+                sizes = [power_users, regular_users, casual_users]
+                colors = ['#ff6b6b', '#4ecdc4', '#95e1d3']
+                labels = ['Power', 'Regular', 'Casual']
+                ax.pie(sizes, labels=labels, autopct='%1.1f%%', colors=colors, 
+                      startangle=90, textprops={'fontsize': 11, 'fontweight': 'bold'})
+                ax.set_title("User Segmentation", fontsize=12, fontweight='bold', pad=20)
+                st.pyplot(fig)
+                plt.close()
+    
+    # ==================== SMART RECOMMENDATIONS ====================
+    elif st.session_state.admin_view == "recommendations":
+        st.subheader("💡 AI-Powered Smart Recommendations")
+        
+        if filtered_df.empty:
+            st.warning("No data available for generating recommendations")
+        else:
+            st.markdown("### 🎯 System Intelligence Report")
+            
+            # ===== TRAINING DATA RECOMMENDATIONS =====
+            st.markdown("### 📚 Training Data Improvement Suggestions")
+            
+            # Find low confidence queries
+            if 'Confidence' in filtered_df.columns:
+                low_conf_df = filtered_df[filtered_df['Confidence'] < 0.6].copy()
+                
+                if not low_conf_df.empty:
+                    st.warning(f"⚠️ Found {len(low_conf_df)} queries with confidence < 0.6")
+                    
+                    # Group by intent
+                    low_conf_by_intent = low_conf_df.groupby('Intent').agg({
+                        'Query': 'count',
+                        'Confidence': 'mean'
+                    }).reset_index()
+                    low_conf_by_intent.columns = ['Intent', 'Low Conf Count', 'Avg Confidence']
+                    low_conf_by_intent = low_conf_by_intent.sort_values('Low Conf Count', ascending=False)
+                    
+                    col1, col2 = st.columns([2, 1])
+                    
+                    with col1:
+                        st.markdown("#### 🎯 Intents Needing More Training Data")
+                        
+                        fig, ax = plt.subplots(figsize=(10, 5))
+                        bars = ax.bar(low_conf_by_intent['Intent'], 
+                                     low_conf_by_intent['Low Conf Count'],
+                                     color='#ff6b6b', alpha=0.7)
+                        ax.set_xlabel("Intent", fontsize=11, fontweight='bold')
+                        ax.set_ylabel("Low Confidence Query Count", fontsize=11, fontweight='bold')
+                        ax.set_title("Intents with Most Low-Confidence Queries", 
+                                    fontsize=12, fontweight='bold', pad=15)
+                        plt.xticks(rotation=45, ha='right')
+                        
+                        for bar in bars:
+                            height = bar.get_height()
+                            ax.text(bar.get_x() + bar.get_width()/2., height,
+                                   f'{int(height)}', ha='center', va='bottom', fontweight='bold')
+                        
+                        plt.tight_layout()
+                        st.pyplot(fig)
+                        plt.close()
+                    
+                    with col2:
+                        st.markdown("#### 📋 Priority List")
+                        for idx, row in low_conf_by_intent.iterrows():
+                            st.markdown(f"""
+                            <div style='background: #fff3f3; padding: 12px; border-radius: 8px; 
+                                       margin-bottom: 8px; border-left: 4px solid #ff6b6b;'>
+                                <strong style='color: #d32f2f;'>{row['Intent'].replace('_', ' ').title()}</strong><br>
+                                <span style='font-size: 13px;'>
+                                    {int(row['Low Conf Count'])} queries | Avg: {row['Avg Confidence']:.2f}
+                                </span>
+                            </div>
+                            """, unsafe_allow_html=True)
+                    
+                    # Show specific problematic queries
+                    st.divider()
+                    st.markdown("#### 🔍 Sample Low-Confidence Queries")
+                    st.info("These queries need similar examples in training data")
+                    
+                    sample_queries = low_conf_df.nsmallest(10, 'Confidence')[['Query', 'Intent', 'Confidence']]
+                    sample_queries = sample_queries.reset_index(drop=True)
+                    sample_queries.index = sample_queries.index + 1
+                    
+                    for idx, row in sample_queries.iterrows():
+                        st.markdown(f"""
+                        <div style='background: #f8f9fa; padding: 10px; border-radius: 8px; 
+                                   margin-bottom: 6px; border-left: 3px solid #ffa726;'>
+                            <strong>Query:</strong> {row['Query']}<br>
+                            <span style='font-size: 12px; color: #666;'>
+                                Intent: <strong>{row['Intent']}</strong> | Confidence: <strong>{row['Confidence']:.2f}</strong>
+                            </span>
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                else:
+                    st.success("✅ All queries have good confidence scores!")
+            
+            st.divider()
+            
+            # ===== FAQ RECOMMENDATIONS =====
+            st.markdown("### ❓ Missing FAQ Detection")
+            
+            # Find common queries without FAQ matches
+            from database.bank_crud import get_all_faqs
+            faqs = get_all_faqs()
+            faq_questions = [faq[1].lower() for faq in faqs] if faqs else []
+            
+            # Check for queries that might need FAQs
+            query_counts = filtered_df['Query'].value_counts().head(20)
+            
+            potential_faqs = []
+            for query, count in query_counts.items():
+                # Simple check: if query appears multiple times and not in FAQs
+                if count >= 2 and not any(query.lower() in faq for faq in faq_questions):
+                    potential_faqs.append((query, count))
+            
+            if potential_faqs:
+                st.warning(f"💡 Found {len(potential_faqs)} potential FAQ topics")
+                
+                col1, col2 = st.columns([3, 2])
+                
+                with col1:
+                    st.markdown("#### 📝 Suggested FAQ Topics")
+                    for query, count in potential_faqs[:10]:
+                        st.markdown(f"""
+                        <div style='background: #e3f2fd; padding: 12px; border-radius: 8px; 
+                                   margin-bottom: 8px; border-left: 4px solid #2196f3;'>
+                            <strong style='color: #1565c0;'>"{query}"</strong><br>
+                            <span style='font-size: 12px; color: #555;'>
+                                Asked {count} times | Consider adding to FAQ
+                            </span>
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                with col2:
+                    st.markdown("#### 💡 Action Items")
+                    st.info("""
+                    **Recommended Actions:**
+                    
+                    1. Review these common queries
+                    2. Create detailed FAQ entries
+                    3. Link to relevant intents
+                    4. Test with users
+                    """)
+                    
+                    total_missed = sum(count for _, count in potential_faqs)
+                    st.metric("Total Queries Needing FAQs", total_missed)
+            else:
+                st.success("✅ FAQ coverage is comprehensive!")
+            
+            st.divider()
+            
+            # ===== INTENT OPTIMIZATION =====
+            st.markdown("### 🔗 Intent Optimization Suggestions")
+            
+            # Check for intent overlap or redundancy
+            intent_similarity = filtered_df.groupby('Intent').agg({
+                'Query': lambda x: list(x),
+                'Confidence': 'mean'
+            }).reset_index()
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("#### 📊 Intent Health Score")
+                
+                for idx, row in intent_similarity.iterrows():
+                    intent = row['Intent']
+                    avg_conf = row['Confidence']
+                    query_count = len(row['Query'])
+                    
+                    # Calculate health score
+                    health_score = (avg_conf * 0.7 + min(query_count / 50, 1) * 0.3) * 100
+                    
+                    color = '#4caf50' if health_score > 75 else '#ff9800' if health_score > 50 else '#f44336'
+                    
+                    st.markdown(f"""
+                    <div style='background: {color}22; padding: 12px; border-radius: 8px; 
+                               margin-bottom: 8px; border-left: 4px solid {color};'>
+                        <strong>{intent.replace('_', ' ').title()}</strong><br>
+                        <span style='font-size: 12px;'>
+                            Health Score: <strong>{health_score:.1f}%</strong> | 
+                            Queries: {query_count} | Avg Conf: {avg_conf:.2f}
+                        </span>
+                    </div>
+                    """, unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown("#### 💊 Improvement Recommendations")
+                
+                recommendations = []
+                
+                for idx, row in intent_similarity.iterrows():
+                    intent = row['Intent']
+                    avg_conf = row['Confidence']
+                    query_count = len(row['Query'])
+                    
+                    if avg_conf < 0.6:
+                        recommendations.append(f"🔴 **{intent}**: Add more diverse training examples")
+                    elif query_count < 10:
+                        recommendations.append(f"🟡 **{intent}**: Increase training data volume")
+                    elif avg_conf > 0.9 and query_count > 50:
+                        recommendations.append(f"🟢 **{intent}**: Performing excellently!")
+                
+                if recommendations:
+                    for rec in recommendations:
+                        st.markdown(rec)
+                else:
+                    st.success("✅ All intents are well-optimized!")
+    
+    # ==================== PERFORMANCE METRICS ====================
+    elif st.session_state.admin_view == "performance":
+        st.subheader("🎓 Model Performance Metrics")
+        
+        if filtered_df.empty:
+            st.warning("No data available for performance analysis")
+        else:
+            st.markdown("### 📊 Comprehensive Model Evaluation")
+            
+            # ===== OVERALL PERFORMANCE =====
+            st.markdown("### 🎯 Overall Model Performance")
+            
+            total_queries = len(filtered_df)
+            high_conf = len(filtered_df[filtered_df['Confidence'] > 0.7])
+            medium_conf = len(filtered_df[(filtered_df['Confidence'] >= 0.5) & (filtered_df['Confidence'] <= 0.7)])
+            low_conf = len(filtered_df[filtered_df['Confidence'] < 0.5])
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                success_rate = (high_conf / total_queries * 100) if total_queries > 0 else 0
+                st.markdown(f"""
+                <div style='background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); 
+                            padding: 30px; border-radius: 15px; text-align: center; color: white;
+                            box-shadow: 0 4px 15px rgba(0,0,0,0.2);'>
+                    <h4 style='margin: 0; font-size: 14px;'>Success Rate</h4>
+                    <h1 style='margin: 15px 0; font-size: 42px; font-weight: 800;'>{success_rate:.1f}%</h1>
+                    <p style='margin: 0; font-size: 11px;'>Confidence > 0.7</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown(f"""
+                <div style='background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); 
+                            padding: 30px; border-radius: 15px; text-align: center; color: white;
+                            box-shadow: 0 4px 15px rgba(0,0,0,0.2);'>
+                    <h4 style='margin: 0; font-size: 14px;'>High Confidence</h4>
+                    <h1 style='margin: 15px 0; font-size: 42px; font-weight: 800;'>{high_conf}</h1>
+                    <p style='margin: 0; font-size: 11px;'>{(high_conf/total_queries*100):.1f}% of queries</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col3:
+                st.markdown(f"""
+                <div style='background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); 
+                            padding: 30px; border-radius: 15px; text-align: center; color: white;
+                            box-shadow: 0 4px 15px rgba(0,0,0,0.2);'>
+                    <h4 style='margin: 0; font-size: 14px;'>Medium Confidence</h4>
+                    <h1 style='margin: 15px 0; font-size: 42px; font-weight: 800;'>{medium_conf}</h1>
+                    <p style='margin: 0; font-size: 11px;'>{(medium_conf/total_queries*100):.1f}% of queries</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col4:
+                st.markdown(f"""
+                <div style='background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%); 
+                            padding: 30px; border-radius: 15px; text-align: center; color: white;
+                            box-shadow: 0 4px 15px rgba(0,0,0,0.2);'>
+                    <h4 style='margin: 0; font-size: 14px;'>Low Confidence</h4>
+                    <h1 style='margin: 15px 0; font-size: 42px; font-weight: 800;'>{low_conf}</h1>
+                    <p style='margin: 0; font-size: 11px;'>{(low_conf/total_queries*100):.1f}% of queries</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            st.divider()
+            
+            # ===== INTENT-WISE PERFORMANCE =====
+            st.markdown("### 📈 Intent-wise Performance Metrics")
+            
+            # Calculate metrics per intent
+            intent_metrics = filtered_df.groupby('Intent').agg({
+                'Confidence': ['mean', 'std', 'min', 'max'],
+                'Query': 'count'
+            }).reset_index()
+            
+            intent_metrics.columns = ['Intent', 'Avg_Confidence', 'Std_Dev', 'Min_Conf', 'Max_Conf', 'Query_Count']
+            
+            # Calculate precision (queries with conf > 0.7 / total)
+            intent_metrics['Precision'] = intent_metrics.apply(
+                lambda row: len(filtered_df[(filtered_df['Intent'] == row['Intent']) & 
+                                            (filtered_df['Confidence'] > 0.7)]) / row['Query_Count'],
+                axis=1
+            )
+            
+            # Sort by performance
+            intent_metrics = intent_metrics.sort_values('Avg_Confidence', ascending=False)
+            
+            # Display table
+            st.markdown("#### 📊 Detailed Metrics Table")
+            
+            display_metrics = intent_metrics[['Intent', 'Query_Count', 'Avg_Confidence', 'Precision', 'Std_Dev']].copy()
+            display_metrics['Intent'] = display_metrics['Intent'].str.replace('_', ' ').str.title()
+            display_metrics.columns = ['Intent', 'Queries', 'Avg Confidence', 'Precision', 'Std Dev']
+            display_metrics = display_metrics.round(3)
+            display_metrics.index = range(1, len(display_metrics) + 1)
+            
+            st.dataframe(display_metrics, use_container_width=True)
+            
+            st.divider()
+            
+            # ===== PERFORMANCE VISUALIZATION =====
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("#### 🎯 Precision by Intent")
+                
+                fig, ax = plt.subplots(figsize=(10, 6))
+                colors = ['#4caf50' if p > 0.7 else '#ff9800' if p > 0.5 else '#f44336' 
+                         for p in intent_metrics['Precision']]
+                bars = ax.barh(intent_metrics['Intent'], intent_metrics['Precision'], color=colors, alpha=0.8)
+                ax.set_xlabel("Precision Score", fontsize=11, fontweight='bold')
+                ax.set_ylabel("Intent", fontsize=11, fontweight='bold')
+                ax.set_title("Intent Recognition Precision", fontsize=12, fontweight='bold')
+                ax.axvline(x=0.7, color='green', linestyle='--', alpha=0.5, label='Target (0.7)')
+                ax.legend()
+                
+                for i, bar in enumerate(bars):
+                    width = bar.get_width()
+                    ax.text(width, bar.get_y() + bar.get_height()/2,
+                           f' {width:.2f}', ha='left', va='center', fontweight='bold')
+                
+                plt.tight_layout()
+                st.pyplot(fig)
+                plt.close()
+            
+            with col2:
+                st.markdown("#### 📊 Confidence Distribution")
+                
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                for intent in intent_metrics['Intent']:
+                    intent_data = filtered_df[filtered_df['Intent'] == intent]['Confidence']
+                    ax.hist(intent_data, alpha=0.5, label=intent.replace('_', ' ').title(), bins=15)
+                
+                ax.set_xlabel("Confidence Score", fontsize=11, fontweight='bold')
+                ax.set_ylabel("Frequency", fontsize=11, fontweight='bold')
+                ax.set_title("Confidence Score Distribution by Intent", fontsize=12, fontweight='bold')
+                ax.legend(loc='upper left', fontsize=8)
+                ax.grid(True, alpha=0.3)
+                
+                plt.tight_layout()
+                st.pyplot(fig)
+                plt.close()
+            
+            st.divider()
+            
+            # ===== MODEL STABILITY =====
+            st.markdown("### 🔬 Model Stability Analysis")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.markdown("#### 📉 Consistency Score")
+                # Lower std dev = more consistent
+                avg_std_dev = intent_metrics['Std_Dev'].mean()
+                consistency_score = max(0, (1 - avg_std_dev) * 100)
+                
+                st.metric("Model Consistency", f"{consistency_score:.1f}%",
+                         help="Based on confidence standard deviation")
+                
+                if consistency_score > 80:
+                    st.success("✅ Highly consistent predictions")
+                elif consistency_score > 60:
+                    st.warning("⚠️ Moderate consistency")
+                else:
+                    st.error("❌ Needs stability improvement")
+            
+            with col2:
+                st.markdown("#### 🎯 Coverage Score")
+                # How many intents have good performance
+                good_intents = len(intent_metrics[intent_metrics['Avg_Confidence'] > 0.7])
+                total_intents = len(intent_metrics)
+                coverage_score = (good_intents / total_intents * 100) if total_intents > 0 else 0
+                
+                st.metric("Intent Coverage", f"{coverage_score:.1f}%",
+                         help="Percentage of intents with avg confidence > 0.7")
+                
+                if coverage_score > 80:
+                    st.success(f"✅ {good_intents}/{total_intents} intents performing well")
+                else:
+                    st.warning(f"⚠️ Only {good_intents}/{total_intents} intents above threshold")
+            
+            with col3:
+                st.markdown("#### 🏆 Overall Grade")
+                
+                # Combined score
+                overall_score = (success_rate * 0.5 + consistency_score * 0.25 + coverage_score * 0.25)
+                
+                if overall_score >= 90:
+                    grade = "A+"
+                    color = "#4caf50"
+                elif overall_score >= 80:
+                    grade = "A"
+                    color = "#8bc34a"
+                elif overall_score >= 70:
+                    grade = "B"
+                    color = "#ffc107"
+                elif overall_score >= 60:
+                    grade = "C"
+                    color = "#ff9800"
+                else:
+                    grade = "D"
+                    color = "#f44336"
+                
+                st.markdown(f"""
+                <div style='background: {color}; padding: 30px; border-radius: 15px; 
+                            text-align: center; color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.2);'>
+                    <h1 style='margin: 0; font-size: 72px; font-weight: 900;'>{grade}</h1>
+                    <p style='margin: 10px 0 0 0; font-size: 14px;'>Model Grade</p>
+                </div>
+                """, unsafe_allow_html=True)
+    
+    # ==================== TOP QUERIES VIEW ====================
+    elif st.session_state.admin_view == "queries":
+        st.subheader("📊 Top User Queries")
+        if filtered_df.empty:
+            st.warning("No data available")
+        else:
+            st.metric("📈 Total Queries", len(filtered_df))
+           
+            st.divider()
+            st.subheader("📋 Intent-wise Query Breakdown")
+            intent_df = filtered_df.groupby("Intent")["Query"].agg(Count='count').reset_index()
+            intent_df.columns = ["Intent", "Count"]
+            intent_df = intent_df.sort_values("Count", ascending=False)
+            intent_df.reset_index(drop=True, inplace=True)
+            intent_df.index = intent_df.index + 1
+            st.dataframe(intent_df, use_container_width=True)
+            
+            st.divider()
+            st.subheader("📊 Intent Distribution Chart")
+            color_map = {
+                "greetings": "#FF6B6B", 
+                "check_balance": "#4ECDC4", 
+                "transfer_money": "#45B7D1", 
+                "card_block": "#FFA07A", 
+                "llm": "#95E1D3"
+            }
+            intent_counts = filtered_df["Intent"].value_counts()
+            colors = [color_map.get(intent, "#CCCCCC") for intent in intent_counts.index]
+            
+            chart_col, legend_col = st.columns([3, 1])
+            with chart_col:
+                fig, ax = plt.subplots(figsize=(10, 6))
+                bars = ax.bar(intent_counts.index, intent_counts.values, color=colors)
+                ax.set_xlabel("Intent", fontsize=12, fontweight='bold')
+                ax.set_ylabel("Count", fontsize=12, fontweight='bold')
+                ax.set_title("Query Count by Intent", fontsize=14, fontweight='bold')
+                ax.tick_params(axis='x', rotation=45)
+                for bar in bars:
+                    height = bar.get_height()
+                    ax.text(bar.get_x() + bar.get_width()/2., height, 
+                           f'{int(height)}', ha='center', va='bottom', fontweight='bold')
+                plt.tight_layout()
+                st.pyplot(fig)
+                plt.close()
+            
+            with legend_col:
+                st.markdown("### 🎨 Color Legend")
+                st.markdown("---")
+                for intent, color in color_map.items():
+                    if intent in intent_counts.index:
+                        count = intent_counts[intent]
+                        st.markdown(f"""
+                        <div style='display: flex; align-items: center; margin-bottom: 10px;'>
+                            <div style='width: 20px; height: 20px; background-color: {color}; 
+                                 border-radius: 3px; margin-right: 8px;'></div>
+                            <span><b>{intent.replace('_', ' ').title()}</b> ({count})</span>
+                        </div>
+                        """, unsafe_allow_html=True)
+            
+            st.divider()
+            with st.expander("📝 View All Queries"):
+                display_df = filtered_df[["Query", "Intent", "Confidence", "Time"]].sort_values("Time", ascending=True)
+                display_df.reset_index(drop=True, inplace=True)
+                display_df.index = display_df.index + 1
+                st.dataframe(display_df, use_container_width=True)
+    
+    # ==================== KNOWLEDGE BASE VIEW ====================
+    elif st.session_state.admin_view == "knowledge_base":
+        st.subheader("📚 Knowledge Base Management")
+        tab1, tab2, tab3, tab4 = st.tabs(["📖 View All", "➕ Add New", "🔍 Search", "📊 By Category"])
+        
+        with tab1:
+            st.markdown("### 📋 All FAQs")
+            faqs = get_all_faqs()
+            if not faqs:
+                st.info("No FAQs found. Add your first FAQ!")
+            else:
+                st.metric("Total FAQs", len(faqs))
+                st.divider()
+                for faq in faqs:
+                    faq_id, question, answer, category, created_at = faq
+                    with st.expander(f"❓ {question}"):
+                        st.markdown(f"**Category:** `{category}`")
+                        st.markdown(f"**Answer:**")
+                        st.info(answer)
+                        st.caption(f"Added on: {created_at}")
+                        col1, col2 = st.columns([1, 1])
+                        with col1:
+                            if st.button(f"✏️ Edit", key=f"edit_{faq_id}"):
+                                st.session_state.edit_faq_id = faq_id
+                                st.session_state.edit_question = question
+                                st.session_state.edit_answer = answer
+                                st.session_state.edit_category = category
+                                st.session_state.admin_view = "edit_faq"
+                                st.rerun()
+                        with col2:
+                            if st.button(f"🗑️ Delete", key=f"delete_{faq_id}"):
+                                delete_faq(faq_id)
+                                st.success("FAQ deleted successfully!")
+                                st.rerun()
+        
+        with tab2:
+            st.markdown("### ➕ Add New FAQ")
+            categories = ["greetings", "check_balance", "transfer_money", "card_block", "account_info", "general"]
+            new_question = st.text_area("Question", placeholder="e.g., How do I check my account balance?")
+            new_answer = st.text_area("Answer", placeholder="You can check your balance by...", height=150)
+            new_category = st.selectbox("Category", categories)
+            if st.button("➕ Add FAQ", type="primary"):
+                if new_question.strip() and new_answer.strip():
+                    add_faq(new_question.strip(), new_answer.strip(), new_category)
+                    st.success("✅ FAQ added successfully!")
+                    st.rerun()
+                else:
+                    st.error("⚠️ Please fill in both question and answer")
+        
+        with tab3:
+            st.markdown("### 🔍 Search FAQs")
+            search_term = st.text_input("Search by question or category", placeholder="Type to search...")
+            if search_term:
+                search_results = search_faqs(search_term)
+                if not search_results:
+                    st.warning(f"No results found for '{search_term}'")
+                else:
+                    st.success(f"Found {len(search_results)} result(s)")
+                    st.divider()
+                    for faq in search_results:
+                        faq_id, question, answer, category, created_at = faq
+                        with st.expander(f"❓ {question}"):
+                            st.markdown(f"**Category:** `{category}`")
+                            st.markdown(f"**Answer:**")
+                            st.info(answer)
+                            st.caption(f"Added on: {created_at}")
+        
+        with tab4:
+            st.markdown("### 📊 FAQs by Category")
+            categories = ["greetings", "check_balance", "transfer_money", "card_block", "account_info", "general"]
+            selected_category = st.selectbox("Select Category", categories)
+            if selected_category:
+                category_faqs = get_faqs_by_category(selected_category)
+                if not category_faqs:
+                    st.info(f"No FAQs found in '{selected_category}' category")
+                else:
+                    st.success(f"Found {len(category_faqs)} FAQ(s) in '{selected_category}'")
+                    st.divider()
+                    for faq in category_faqs:
+                        faq_id, question, answer, category, created_at = faq
+                        with st.expander(f"❓ {question}"):
+                            st.markdown(f"**Answer:**")
+                            st.info(answer)
+                            st.caption(f"Added on: {created_at}")
+    
+    # ==================== EDIT FAQ VIEW ====================
+    elif st.session_state.admin_view == "edit_faq":
+        st.subheader("✏️ Edit FAQ")
+        categories = ["greetings", "check_balance", "transfer_money", "card_block", "account_info", "general"]
+        edit_question = st.text_area("Question", value=st.session_state.edit_question)
+        edit_answer = st.text_area("Answer", value=st.session_state.edit_answer, height=150)
+        edit_category = st.selectbox("Category", categories, index=categories.index(st.session_state.edit_category))
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button("💾 Save Changes", type="primary"):
+                if edit_question.strip() and edit_answer.strip():
+                    update_faq(st.session_state.edit_faq_id, edit_question.strip(), edit_answer.strip(), edit_category)
+                    st.success("✅ FAQ updated successfully!")
+                    st.session_state.admin_view = "knowledge_base"
+                    st.rerun()
+                else:
+                    st.error("⚠️ Please fill in both question and answer")
+        with col2:
+            if st.button("❌ Cancel"):
+                st.session_state.admin_view = "knowledge_base"
+                st.rerun()
+    
+    # ==================== CONFIDENCE VIEW ====================
+    elif st.session_state.admin_view == "confidence":
+        st.subheader("📈 Intent Confidence")
+        if filtered_df.empty:
+            st.warning("No data available")
+        else:
+            intent_counts = filtered_df["Intent"].value_counts()
+            total_queries = intent_counts.sum()
+            confidence_values = intent_counts / total_queries
+            
+            st.info(f"ℹ️ Confidence calculated from {len(filtered_df)} initial queries from {len(df)} total records")
+            
+            st.markdown("### 📊 Intent-wise Confidence")
+            
+            color_map = {
+                "greetings": "#FF6B6B",
+                "check_balance": "#4ECDC4", 
+                "transfer_money": "#45B7D1",
+                "card_block": "#FFA07A",
+                "llm": "#95E1D3"
+            }
+            
+            num_intents = len(intent_counts)
+            cols = st.columns(num_intents)
+            
+            for idx, (intent, conf) in enumerate(confidence_values.items()):
+                with cols[idx]:
+                    color = color_map.get(intent, "#CCCCCC")
+                    st.markdown(f"""
+                    <div style='background-color: {color}; 
+                                padding: 25px 10px; 
+                                border-radius: 12px; 
+                                text-align: center; 
+                                box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+                                height: 150px;
+                                display: flex;
+                                flex-direction: column;
+                                justify-content: center;'>
+                        <h4 style='color: white; margin: 0; font-size: 14px;'>
+                            {intent.replace('_', ' ').title()}
+                        </h4>
+                        <h1 style='color: white; margin: 10px 0; font-size: 32px;'>
+                            {conf:.2f}
+                        </h1>
+                        <p style='color: white; margin: 0; font-size: 12px;'>
+                            {intent_counts[intent]} queries
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+            
+            st.divider()
+            
+            st.markdown("### 🍩 Confidence Distribution")
+            
+            chart_col, legend_col = st.columns([2, 1])
+            
+            with chart_col:
+                fig, ax = plt.subplots(figsize=(5, 5))
+                colors = [color_map.get(intent, "#CCCCCC") for intent in intent_counts.index]
+                
+                wedges, texts, autotexts = ax.pie(
+                    confidence_values,
+                    labels=None,
+                    autopct=lambda p: f"{p/100:.2f}",
+                    startangle=95,
+                    colors=colors,
+                    wedgeprops=dict(width=0.5),
+                    textprops={'fontsize': 10, 'weight': 'bold', 'color': 'white'}
+                )
+                
+                for autotext in autotexts:
+                    autotext.set_color('black')
+                
+                ax.set_title("Confidence Distribution", 
+                            fontsize=12, fontweight='bold', pad=10)
+                ax.axis("equal")
+                st.pyplot(fig)
+                plt.close()
+            
+            with legend_col:
+                st.markdown("### 📋 Legend")
+                st.markdown("---")
+                for intent, conf in confidence_values.items():
+                    color = color_map.get(intent, "#CCCCCC")
+                    count = intent_counts[intent]
+                    st.markdown(f"""
+                    <div style='display: flex; align-items: center; margin-bottom: 15px;'>
+                        <div style='width: 25px; height: 25px; background-color: {color}; 
+                             border-radius: 5px; margin-right: 10px; 
+                             box-shadow: 0 2px 4px rgba(0,0,0,0.2);'></div>
+                        <div style='line-height: 1.2;'>
+                            <b>{intent.replace('_', ' ').title()}</b><br>
+                            <span style='font-size: 0.85em; color: #666;'>
+                                {count} queries | {conf:.2f}
+                            </span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+    
+    # ==================== MODEL RETRAINING VIEW ====================
+    elif st.session_state.admin_view == "retrain":
+        st.subheader("🔁 NLU Model Retraining - Milestone 1")
+        
+        from nlu_engine.train_intent import load_intents, save_intents, retrain_nlu_model
+        from nlu_engine.entity_extractor import EntityExtractor
+        
+        if "retrain_done" not in st.session_state:
+            st.session_state.retrain_done = False
+        
+        intents_data = load_intents()
+        
+        tab1, tab2, tab3, tab4 = st.tabs(["📚 Training Data Overview", "➕ Add New Example", "🆕 Create New Intent", "🔄 Train & Test"])
+        
+        with tab1:
+            st.markdown("### 📊 Current Training Data")
+            st.info(f"Total Intents: **{len(intents_data)}** | Total Examples: **{sum(len(examples) for examples in intents_data.values())}**")
+            
+            st.divider()
+            
+            for intent_name, examples in intents_data.items():
+                with st.expander(f"🎯 {intent_name.replace('_', ' ').title()} ({len(examples)} examples)", expanded=False):
+                    st.markdown(f"**Intent:** `{intent_name}`")
+                    st.markdown(f"**Number of Examples:** {len(examples)}")
+                    st.markdown("**Training Examples:**")
+                    
+                    for idx, example in enumerate(examples, 1):
+                        st.markdown(f"{idx}. {example}")
+                    
+                    st.divider()
+                    st.caption(f"This intent has {len(examples)} training examples")
+        
+        with tab2:
+            st.markdown("### ➕ Add New Training Example")
+            st.info("Add new examples to improve the NLU model's accuracy.")
+            
+            if not intents_data:
+                st.warning("⚠️ No intents found. Please create an intent first in the 'Create New Intent' tab.")
+            else:
+                intent_name = st.selectbox("Select Intent", list(intents_data.keys()), key="add_intent_select")
+                
+                current_count = len(intents_data[intent_name])
+                st.metric(f"Current examples for '{intent_name}'", current_count)
+                
+                new_example = st.text_input(
+                    "Add Training Example", 
+                    placeholder=f"e.g., for 'greetings': Hello there!",
+                    key="add_example_input"
+                )
+                
+                if new_example.strip():
+                    st.markdown("**Preview:**")
+                    st.success(f"Intent: `{intent_name}` → Example: \"{new_example}\"")
+                
+                if st.button("➕ Add Example", type="primary", key="add_example_btn"):
+                    if new_example.strip():
+                        intents_data[intent_name].append(new_example.strip())
+                        save_intents(intents_data)
+                        
+                        st.success(f"✅ Example added to '{intent_name}' successfully!")
+                        st.info(f"New example count: {len(intents_data[intent_name])}")
+                        st.warning("⚠️ Please retrain the model in the 'Train & Test' tab.")
+                        
+                        st.session_state.retrain_done = False
+                        st.rerun()
+                    else:
+                        st.warning("⚠ Please enter a valid example")
+        
+        with tab3:
+            st.markdown("### 🆕 Create New Intent")
+            st.info("Create a completely new intent with multiple training examples.")
+            
+            new_intent_name = st.text_input(
+                "Intent Name",
+                placeholder="e.g., loan_inquiry",
+                key="new_intent_name"
+            )
+            
+            new_intent_examples = st.text_area(
+                "Training Examples (one per line)",
+                placeholder="I want to apply for a loan\nHow can I get a personal loan?\nTell me about loan options",
+                height=200,
+                key="new_intent_examples"
+            )
+            
+            if new_intent_name.strip() and new_intent_examples.strip():
+                st.markdown("**Preview:**")
+                intent_clean = new_intent_name.strip().lower().replace(" ", "_")
+                example_lines = [line.strip() for line in new_intent_examples.split("\n") if line.strip()]
+                st.info(f"Intent: `{intent_clean}` with {len(example_lines)} examples")
+            
+            if st.button("🆕 Create Intent", type="primary", key="create_intent_btn"):
+                if new_intent_name.strip() and new_intent_examples.strip():
+                    intent_clean = new_intent_name.strip().lower().replace(" ", "_")
+                    
+                    if intent_clean in intents_data:
+                        st.error(f"⚠️ Intent '{intent_clean}' already exists!")
+                    else:
+                        examples = [line.strip() for line in new_intent_examples.split("\n") if line.strip()]
+                        
+                        if examples:
+                            intents_data[intent_clean] = examples
+                            save_intents(intents_data)
+                            
+                            st.success(f"✅ Intent '{intent_clean}' created with {len(examples)} examples!")
+                            st.warning("⚠️ Please retrain the model in the 'Train & Test' tab.")
+                            
+                            st.session_state.retrain_done = False
+                            st.rerun()
+                        else:
+                            st.error("⚠️ Please provide at least one example")
+                else:
+                    st.warning("⚠️ Please fill in both intent name and examples")
+        
+        with tab4:
+            st.markdown("### 🔄 Model Retraining")
+            
+            intents_data = load_intents()
+            
+            if not intents_data:
+                st.warning("⚠️ No training data available. Please add intents first.")
+            else:
+                total_examples = sum(len(examples) for examples in intents_data.values())
+                
+                col1, col2 = st.columns([3, 1])
+                
+                with col1:
+                    st.info(f"**Training Data:** {len(intents_data)} intents | {total_examples} examples")
+                    
+                    if st.session_state.retrain_done:
+                        st.success("✅ Model is trained with latest data!")
+                    else:
+                        st.warning("⚠️ Model needs retraining to use the latest training data.")
+                    
+                    st.markdown("""
+                    **What happens during retraining:**
+                    - Loads all updated training examples
+                    - Trains the NLU model with new data
+                    - Updates model weights and parameters
+                    - Saves the trained model for use in chatbot
+                    """)
+                
+                with col2:
+                    if st.button("🔁 Train Model", type="primary", key="retrain_model_btn"):
+                        with st.spinner("Training model..."):
+                            try:
+                                success = retrain_nlu_model(intents_data)
+                                if success:
+                                    st.success("✅ NLU Model retrained successfully!")
+                                    st.balloons()
+                                    st.session_state.retrain_done = True
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Model retraining failed!")
+                            except Exception as e:
+                                st.error(f"❌ Model retraining failed: {e}")
+            
+            st.divider()
+            
+            st.markdown("### 🧪 NLU Testing - Intent Recognition & Entity Extraction")
+            st.info("Test both intent recognition and entity extraction on sample queries")
+            
+            test_query = st.text_area(
+                "Enter a test query:",
+                placeholder="e.g., Transfer 5000 to account 123456789",
+                height=80,
+                key="nlu_test_query"
+            )
+            
+            if st.button("🔍 Analyze Query", type="primary", key="analyze_query_btn"):
+                if test_query.strip():
+                    try:
+                        from nlu_engine.train_intent import classify_intent
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.markdown("#### 🎯 Intent Recognition")
+                            
+                            intent_result = classify_intent(test_query)
+                            predicted_intent = intent_result.get('intent', 'unknown')
+                            confidence = intent_result.get('confidence', 0.0)
+                            all_intents = intent_result.get('all_intents', {})
+                            
+                            st.metric("Predicted Intent", predicted_intent.replace('_', ' ').title())
+                            st.metric("Confidence", f"{confidence:.2f}")
+                            
+                            confidence_color = "#4CAF50" if confidence > 0.70 else "#FF9800" if confidence > 0.50 else "#F44336"
+                            st.markdown(f"""
+                            <div style='background-color: #f0f0f0; border-radius: 10px; height: 30px; position: relative; overflow: hidden; margin-bottom: 15px;'>
+                                <div style='background-color: {confidence_color}; width: {confidence*100}%; height: 100%; border-radius: 10px;'></div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            if all_intents:
+                                st.markdown("**All Intent Scores:**")
+                                for intent_name, score in sorted(all_intents.items(), key=lambda x: x[1], reverse=True):
+                                    if score > 0:
+                                        st.markdown(
+                                            f"""
+                                            <div style='display:flex; justify-content:space-between; 
+                                                        align-items:center;
+                                                        padding:8px 12px; background:#f5f5f5; 
+                                                        border-radius:8px; margin-bottom:5px;
+                                                        border-left:3px solid #1f77ff;'>
+                                                <span style='font-size:14px; font-weight:500;'>{intent_name.replace('_', ' ').title()}</span>
+                                                <span style='font-size:14px; font-weight:600; color:#1f77ff;'>{score:.2f}</span>
+                                            </div>
+                                            """,
+                                            unsafe_allow_html=True
+                                        )
+                        
+                        with col2:
+                            st.markdown("#### 🏷️ Entity Extraction")
+                            
+                            extractor = EntityExtractor()
+                            entities = extractor.extract(test_query)
+                            
+                            if entities:
+                                st.success(f"✅ Found {len(entities)} entities")
+                                for ent in entities:
+                                    st.markdown(
+                                        f"""
+                                        <div style='display:flex; justify-content:space-between; 
+                                                    align-items:center;
+                                                    padding:10px 12px; background:#f9f9f9; 
+                                                    border-radius:8px; margin-bottom:6px;
+                                                    border-left:3px solid #28a745;'>
+                                            <span style='font-size:14px; font-weight:600; color:#28a745;'>{ent['entity']}</span>
+                                            <span style='font-size:14px; color:#333; background:#e8f5e9; 
+                                                        padding:3px 10px; border-radius:6px;'>{ent['value']}</span>
+                                        </div>
+                                        """,
+                                        unsafe_allow_html=True
+                                    )
+                            else:
+                                st.info("ℹ️ No entities found in this query")
+                        
+                        st.divider()
+                        st.markdown("#### 💡 Analysis Summary")
+                        summary = f"The model identified this as a **{predicted_intent.replace('_', ' ')}** query with **{confidence:.2f}** confidence. "
+                        if entities:
+                            entity_str = ", ".join([f"{e['entity']}={e['value']}" for e in entities])
+                            summary += f"Extracted entities: {entity_str}"
+                        else:
+                            summary += "No entities were detected."
+                        st.success(summary)
+                        
+                    except Exception as e:
+                        st.error(f"❌ Analysis failed: {e}")
+                        import traceback
+                        st.code(traceback.format_exc())
+                else:
+                    st.warning("⚠️ Please enter a query to test")
+            
+            st.divider()
+            
+            st.markdown("### 💡 Try These Example Queries")
+            
+            example_col1, example_col2 = st.columns(2)
+            
+            with example_col1:
+                st.markdown("**Balance Check:**")
+                st.code("What's my account balance for account 789012345?")
+                
+                st.markdown("**Transfer Money:**")
+                st.code("Transfer ₹5000 to account 123456789")
+            
+            with example_col2:
+                st.markdown("**Block Card:**")
+                st.code("My credit card ending with 1234 is stolen")
+                
+                st.markdown("**Find ATM:**")
+                st.code("Where is the nearest ATM?")
+    
+    # ==================== USER CHAT LOGS VIEW ====================
+    elif st.session_state.admin_view == "logs":
+        st.subheader("💬 User Chat Logs")
+        
+        if filtered_df.empty:
+            st.warning("No chat logs available")
+        else:
+            df_sorted = filtered_df.sort_values("Time", ascending=True).reset_index(drop=True)
+            df_sorted.index = df_sorted.index + 1
+            
+            st.metric("Total Chat Logs", len(df_sorted))
+            
+            st.divider()
+            
+            st.dataframe(df_sorted[["User", "Query", "Intent", "Confidence", "Time"]], use_container_width=True)
+            
+            st.divider()
+            
+            with st.expander("⬇ Export Chat Logs"):
+                csv = df_sorted.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    "⬇ Export as CSV",
+                    csv,
+                    "chat_history_filtered.csv",
+                    "text/csv",
+                    type="primary"
+                )
+    
+    bottom_navigation("❓Help", None)

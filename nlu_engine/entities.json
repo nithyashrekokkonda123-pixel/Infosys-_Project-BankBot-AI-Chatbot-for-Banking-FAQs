@@ -1,0 +1,20 @@
+{
+  "entities": [
+    {
+      "name": "amount",
+      "patterns": ["₹100", "₹5000", "$200", "1000", "500", "10,000", "20000 INR"]
+    },
+    {
+      "name": "account_number",
+      "patterns": ["1234567890", "9876543210", "1122334455"]
+    },
+    {
+      "name": "transaction_id",
+      "patterns": ["TXN12345", "UTR123456789", "REF987654"]
+    },
+    {
+      "name": "card_number",
+      "patterns": ["4321", "9876", "1234"]
+    }
+  ]
+}
