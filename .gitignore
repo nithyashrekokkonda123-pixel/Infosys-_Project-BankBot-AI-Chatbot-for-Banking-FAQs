@@ -3,3 +3,8 @@ models
 bankbot_ai
 update one.txt
 visual.ipynb
+__pycache__/
+*.pyc
+*.pkl
+*.db
+.env
