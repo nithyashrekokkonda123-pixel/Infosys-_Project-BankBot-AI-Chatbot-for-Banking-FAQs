@@ -1,10 +1,15 @@
-models
-.env
-bankbot_ai
-update one.txt
-visual.ipynb
+# Python cache
 __pycache__/
 *.pyc
+
+# Environment files
+.env
+
+# ML / data artifacts
 *.pkl
 *.db
-.env
+
+# Optional: experiments or models (only if not required)
+models/
+experiments/
+

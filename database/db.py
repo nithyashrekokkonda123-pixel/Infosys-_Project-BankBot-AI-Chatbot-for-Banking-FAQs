@@ -62,6 +62,11 @@ def init_db():
 
     conn.commit()
     conn.close()
+def normalize_intent(intent):
+    if intent in ["greetings", "greet"]:
+        return "greet"
+    return intent
+
 
 
 

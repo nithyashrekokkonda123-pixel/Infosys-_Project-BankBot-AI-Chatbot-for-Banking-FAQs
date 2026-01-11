@@ -34,12 +34,12 @@ class DialogueHandler:
 
         # ================= QUICK GREETINGS =================
         if lower_text in ["hi", "hello", "hey", "good morning", "good evening"]:
-            intent = "greetings"  # Changed from "greet" to match your intents
+            intent = "greet"  # Changed from "greet" to match your intents
             confidence = 1.0  # Fixed: Set high confidence for direct matches
             response = "Hello 👋 Welcome to BankBot. How can I assist you today?"
 
         elif lower_text in ["thanks", "thank you", "thx", "thankyou"]:
-            intent = "greetings"
+            intent = "greet"
             confidence = 1.0  # Fixed: Set high confidence for direct matches
             response = "You're welcome 😊 Happy to help you!"
 

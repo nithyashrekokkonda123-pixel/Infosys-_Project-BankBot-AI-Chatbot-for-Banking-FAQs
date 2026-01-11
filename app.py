@@ -492,11 +492,11 @@ elif st.session_state.page == "🛠️Admin Dashboard":
     def is_initial_query(query, intent):
         query_lower = query.lower()
         
-        if intent == "greetings":
+        if intent == "greet":
             greetings = ["hi", "hello", "hey", "good morning", "good evening", 
                         "thanks", "thank you", "thx", "thankyou"]
             return query_lower.strip() in greetings
-        
+
         elif intent == "check_balance":
             balance_keywords = ["balance", "check", "account balance", "my balance", 
                                "saving", "current", "money", "funds"]
@@ -691,7 +691,7 @@ elif st.session_state.page == "🛠️Admin Dashboard":
             st.markdown("---")
             st.subheader("📊 Visual Intent Analysis")
             color_map = {
-                "greetings": "#FF6B6B", 
+                "greet": "#FF6B6B", 
                 "check_balance": "#4ECDC4", 
                 "transfer_money": "#45B7D1", 
                 "card_block": "#FFA07A", 
@@ -770,7 +770,7 @@ elif st.session_state.page == "🛠️Admin Dashboard":
         
         with tab2:
             st.markdown("### ➕ Add New FAQ to Knowledge Base")
-            categories = ["greetings", "check_balance", "transfer_money", "card_block", "account_info", "general"]
+            categories = ["greet", "check_balance", "transfer_money", "card_block", "account_info", "general"]
             new_question = st.text_area("Question", placeholder="e.g., How do I check my account balance?")
             new_answer = st.text_area("Answer", placeholder="You can check your balance by...", height=150)
             new_category = st.selectbox("Category", categories)
@@ -857,7 +857,7 @@ elif st.session_state.page == "🛠️Admin Dashboard":
             st.markdown("<br>", unsafe_allow_html=True)
             
             color_map = {
-                "greetings": "#FF6B6B",
+                "greet": "#FF6B6B",
                 "check_balance": "#4ECDC4", 
                 "transfer_money": "#45B7D1",
                 "card_block": "#FFA07A",
@@ -996,7 +996,7 @@ elif st.session_state.page == "🛠️Admin Dashboard":
                 
                 new_example = st.text_input(
                     "Add Training Example", 
-                    placeholder=f"e.g., for 'greetings': Hello there!",
+                    placeholder=f"e.g., for 'greet': Hello there!",
                     key="add_example_input"
                 )
                 
